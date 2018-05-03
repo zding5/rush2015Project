@@ -40,19 +40,6 @@ class RecurrentGenerativeDecoder:
         self._ba   = pc.add_parameters((hid_dim), init=dy.ConstInitializer(0))
         self._v    = pc.add_parameters((hid_dim))
 
-        # VAE
-        # encoder
-        self._Wezyh = pc.add_parameters((hid_dim, emb_dim))
-        self._Wezzh = pc.add_parameters((hid_dim, lat_dim))
-        self._Wezhh = pc.add_parameters((hid_dim, hid_dim))
-        self._bezh  = pc.add_parameters((hid_dim), init=dy.ConstInitializer(0))
-        # mean
-        self._Wezhm = pc.add_parameters((lat_dim, hid_dim))
-        self._bezm  = pc.add_parameters((lat_dim), init=dy.ConstInitializer(0))
-        # var
-        self._Whs  = pc.add_parameters((lat_dim, hid_dim))
-        self._bezs = pc.add_parameters((lat_dim), init=dy.ConstInitializer(0))
-
         # decoder
         self._Wdyzh = pc.add_parameters((hid_dim, lat_dim))
         self._Wdzhh = pc.add_parameters((hid_dim, hid_dim))
@@ -87,20 +74,7 @@ class RecurrentGenerativeDecoder:
             # Second GRU
             hd2_t = self.secondGRUBuilder.initial_state().set_s([hd2_tm1]).add_input(dy.concatenate([c_t, t_tm1])).output()
 
-            # # VAE
-            # # encode
-            # hez_t  = dy.logistic(self.Wezyh*t_tm1 + self.Wezzh*z_tm1 + self.Wezhh*hd1_tm1 + self.bezh)
-            # mean_t = self.Wezhm*hez_t + self.bezm
-            # var_t  = dy_softplus(self.Whs*hez_t + self.bezs)
-
-            # eps = dy.random_normal(self.lat_dim)
-            # z_t = mean_t + dy.cmult(dy.sqrt(var_t), eps)
-
-            # # KL divergence
-            # KL_t = -0.5*dy.sum_elems(1 + dy_log(var_t) - dy.square(mean_t) - var_t)
-
             # decode
-            # hdy_t = dy.tanh(self.Wdyzh*z_t + self.Wdzhh*hd2_t + self.bdyh)
             hdy_t = dy.tanh(self.Wdzhh*hd2_t + self.bdyh)
 
             # Output layer with softmax
@@ -125,25 +99,10 @@ class RecurrentGenerativeDecoder:
             hd2_input = [dy.concatenate([c_t, t_tm1]) for c_t, t_tm1 in zip(c, t)]
             hd2 = self.secondGRUBuilder.initial_state([self.hd2_0]).transduce(hd2_input)
 
-            # VAE & Output layer
-            # z_tm1 = self.z_0
             hd1_ = [self.hd1_0] + hd1[:-1] # [hd1_0, hd1_1, ..., hd1_Tm1]
             KL = []
             y = []
             for i, (t_tm1, hd1_tm1, hd2_t) in enumerate(zip(t, hd1_, hd2)):
-                # # VAE
-                # # encode
-                # hez_t = dy.logistic(self.Wezyh*t_tm1 + self.Wezzh*z_tm1 + self.Wezhh*hd1_tm1 + self.bezh)
-                # mean_t = self.Wezhm*hez_t + self.bezm
-                # var_t = dy_softplus(self.Whs*hez_t + self.bezs)
-
-                # eps = dy.random_normal(self.lat_dim)
-                # z_t = mean_t + dy.cmult(dy.sqrt(var_t), eps)
-                # z_tm1 = z_t
-
-                # # KL divergence
-                # KL_t = -0.5*dy.sum_elems(1 + dy_log(var_t) - dy.square(mean_t) - var_t)
-                # KL.append(KL_t)
 
                 # decode
                 # hdy_t = dy.tanh(self.Wdyzh*z_t + self.Wdzhh*hd2_t + self.bdyh)
@@ -162,20 +121,11 @@ class RecurrentGenerativeDecoder:
         self.Wehh  = dy.parameter(self._Wehh)
         self.ba    = dy.parameter(self._ba)
         self.v     = dy.parameter(self._v)
-        # self.Wezyh = dy.parameter(self._Wezyh)
-        # self.Wezzh = dy.parameter(self._Wezzh)
-        # self.Wezhh = dy.parameter(self._Wezhh)
-        # self.bezh  = dy.parameter(self._bezh)
-        # self.Wezhm = dy.parameter(self._Wezhm)
-        # self.bezm  = dy.parameter(self._bezm)
-        # self.Whs   = dy.parameter(self._Whs)
-        # self.bezs  = dy.parameter(self._bezs)
         self.Wdyzh = dy.parameter(self._Wdyzh)
         self.Wdzhh = dy.parameter(self._Wdzhh)
         self.bdyh  = dy.parameter(self._bdyh)
         self.Wdhy  = dy.parameter(self._Wdhy)
         self.bdhy  = dy.parameter(self._bdhy)
-        # self.z_0   = dy.parameter(self._z_0)
 
     def set_initial_states(self, he):
         hd_0 = dy.average(he)

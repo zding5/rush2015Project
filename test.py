@@ -11,6 +11,7 @@ from RNNutils import build_dataset, np_log
 RANDOM_STATE = 34
 
 def main():
+    # Not all parameters are needed for RNN models
     parser = argparse.ArgumentParser(description='Deep Recurrent Generative Decoder for Abstractive Text Summarization in DyNet')
 
     parser.add_argument('--gpu', type=str, default='0', help='GPU ID to use. For cpu, set -1 [default: `-`]')
@@ -68,12 +69,8 @@ def main():
         x_embs = [dy.lookup(V, x_t) for x_t in x]
         he = encoder(x_embs)
         decoder.set_initial_states(he)
-        # hd1_0, hd2_0, z_0 = decoder.hd1_0, decoder.hd2_0, decoder.z_0
         hd1_0, hd2_0 = decoder.hd1_0, decoder.hd2_0
 
-        # [accum log probs, BOS, initial hidden state1, initial hidden state2, initial latent stat, decoded sequence]
-
-        # candidates = [[0, w2i['<s>'], hd1_0, hd2_0, z_0, []]]
         candidates = [[0, w2i['<s>'], hd1_0, hd2_0, []]]
 
         t = 0
