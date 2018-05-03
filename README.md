@@ -1,6 +1,11 @@
-## A Neural Attention Model for Abstractive Sentence Summarization
+## Original work: A Neural Attention Model for Abstractive Sentence Summarization
 
-Unofficial DyNet implementation of the paper A Neural Attention Model for Abstractive Sentence Summarization (EMNLP 2015)[1].
+Further development on the paper A Neural Attention Model for Abstractive Sentence Summarization (EMNLP 2015)[1].
+
+Official code: https://github.com/facebookarchive/NAMAS
+
+## Base repo
+Code: https://github.com/toru34/rush_emnlp_2015
 
 ### 1. Requirements
 - Python 3.6.0+
@@ -8,6 +13,7 @@ Unofficial DyNet implementation of the paper A Neural Attention Model for Abstra
 - NumPy 1.12.1+
 - scikit-learn 0.19.0+
 - tqdm 4.15.0+
+- Dynet Installation GPU version: http://dynet.readthedocs.io/en/latest/python.html; Must follow the manual installation instruction, otherwise it wouldn't be GPU compatible.
 
 ### 2. Prepare dataset
 To get preprocedded gigaword corpus, run
@@ -59,29 +65,6 @@ python test.py --beam_size 10
 ### 5. Evaluate
 You can use pythonrouge[2] to compute the ROUGE scores.
 An example is in `evaluate.ipynb`.
-
-### 6. Results
-#### 6.1. Gigaword
-Compute ROUGE scorew with 101 valid data.
-
-| |ROUGE-1 (F1)|ROUGE-2 (F1)|ROUGE-L (F1)|
-|-|:-:|:-:|:-:|
-|My implementation|31.56|14.56|30.02|
-
-#### 6.2. DUC2004
-Work in progress.
-
-### 7. Pretrained model
-To get the pretrained model, run
-```
-sh download_pretrained_model.sh
-```
-.
-
-### Notes
-- Convolutional encoder is not implemented.
-- Extractive tuning is not implemented.
-- Official code: https://github.com/facebookarchive/NAMAS
 
 ### References
 - [1] A. M. Rush et al. 2015. A Neural Attention Model for Sentence Summarization. In Proceedings of EMNLP 2015 \[[pdf\]](https://aclweb.org/anthology/D/D15/D15-1044.pdf)
