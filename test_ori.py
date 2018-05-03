@@ -6,12 +6,12 @@ import numpy as np
 import _dynet as dy
 from tqdm import tqdm
 
-from RNNutils import build_dataset, np_log
+from utils import build_dataset
 
 RANDOM_STATE = 34
 
 def main():
-    parser = argparse.ArgumentParser(description='Deep Recurrent Generative Decoder for Abstractive Text Summarization in DyNet')
+    parser = argparse.ArgumentParser(description='A Neural Attention Model for Abstractive Sentence Summarization in DyNet')
 
     parser.add_argument('--gpu', type=str, default='0', help='GPU ID to use. For cpu, set -1 [default: `-`]')
     parser.add_argument('--n_test', type=int, default=189651, help='Number of test examples [default: `189651`]')
@@ -54,51 +54,45 @@ def main():
     test_X, _, _ = build_dataset(INPUT_FILE, w2i=w2i, n_data=N_TEST)
 
     model = dy.Model()
-    V, encoder, decoder = dy.load(MODEL_FILE, model)
-
+    rush_abs = dy.load(MODEL_FILE, model)[0]
+    ENCODER_TYPE = rush_abs.encoder_type
+    C = rush_abs.c
 
     # Decode
     pred_y = []
     for x in tqdm(test_X):
         dy.renew_cg()
-        encoder.associate_parameters()
-        decoder.associate_parameters()
+        rush_abs.associate_parameters()
 
         # Initial states
-        x_embs = [dy.lookup(V, x_t) for x_t in x]
-        he = encoder(x_embs)
-        decoder.set_initial_states(he)
-        # hd1_0, hd2_0, z_0 = decoder.hd1_0, decoder.hd2_0, decoder.z_0
-        hd1_0, hd2_0 = decoder.hd1_0, decoder.hd2_0
+        rush_abs.set_initial_states(x)
 
-        # [accum log probs, BOS, initial hidden state1, initial hidden state2, initial latent stat, decoded sequence]
-
-        # candidates = [[0, w2i['<s>'], hd1_0, hd2_0, z_0, []]]
-        candidates = [[0, w2i['<s>'], hd1_0, hd2_0, []]]
+        # [accum log prob, BOS, t_c, decoded sequence]
+        candidates = [[0, w2i['<s>'], [w2i['<s>']]*C, []]]
 
         t = 0
         while t < MAX_LEN:
             t += 1
             tmp_candidates = []
             end_flag = True
-            for score_tm1, y_tm1, hd1_tm1, hd2_tm1, y_02tm1 in candidates:
+            for score_tm1, y_tm1, y_c, y_02tm1 in candidates:
                 if y_tm1 == w2i['</s>']:
-                    tmp_candidates.append([score_tm1, y_tm1, hd1_tm1, hd2_tm1, y_02tm1])
+                    tmp_candidates.append([score_tm1, y_tm1, y_c, y_02tm1])
                 else:
                     end_flag = False
-                    y_tm1_emb = dy.lookup(V, y_tm1)
-                    _q_t, hd1_t, hd2_t = decoder(y_tm1_emb, tm1s=[hd1_tm1, hd2_tm1], test=True)
-                    _q_t = np_log(_q_t.npvalue()) # Compute log probs
+                    _q_t = rush_abs(t=y_c, test=True)
+                    _q_t = np.log(_q_t.npvalue()) # Log probs
                     q_t, y_t = np.sort(_q_t)[::-1][:K], np.argsort(_q_t)[::-1][:K] # Pick K highest log probs and their ids
-                    score_t = score_tm1 + q_t # Accumlate log probs
+                    score_t = score_tm1 + q_t # Accum log probs
                     tmp_candidates.extend(
-                        [[score_tk, y_tk, hd1_t, hd2_t, y_02tm1+[y_tk]] for score_tk, y_tk in zip(score_t, y_t)]
+                        [[score_tk, y_tk, y_c[1:]+[y_tk], y_02tm1+[y_tk]] for score_tk, y_tk in zip(score_t, y_t)]
                     )
+
             if end_flag:
                 break
-            candidates = sorted(tmp_candidates, key=lambda x: -x[0]/len(x[-1]))[:K] # Sort in normalized log probs and pick K highest candidates
+            candidates = sorted(tmp_candidates, key=lambda x: -x[0]/len(x[-1]))[:K] # Sort in normalized score and pick K highest candidates
 
-        # Pick the candidate with the highest score
+        # Pick the highest-scored candidate
         pred_y.append(candidates[0][-1])
 
     pred_y_txt = ''

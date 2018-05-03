@@ -10,38 +10,42 @@ from tqdm import tqdm
 from sklearn.utils import shuffle
 
 from utils import build_word2count, build_dataset
-from layers import BiGRU, RecurrentGenerativeDecoder
-# from RNNlayers import BiGRU, RecurrentGenerativeDecoder
+from layers import ABS
 
 RANDOM_STATE = 34
 np.random.seed(RANDOM_STATE)
 
 def main():
-    parser = argparse.ArgumentParser(description='Deep Recurrent Generative Decoder for Abstractive Text Summarization in DyNet')
+    parser = argparse.ArgumentParser(description='A Neural Attention Model for Abstractive Sentence Summarization in DyNet')
 
-    parser.add_argument('--gpu', type=str, default='0', help='GPU ID to use. For cpu, set -1 [default: -1]')
-    parser.add_argument('--n_epochs', type=int, default=3, help='Number of epochs [default: 3]')
-    parser.add_argument('--n_train', type=int, default=3803957, help='Number of training examples (up to 3803957 in gigaword) [default: 3803957]')
-    parser.add_argument('--n_valid', type=int, default=189651, help='Number of validation examples (up to 189651 in gigaword) [default: 189651])')
+    parser.add_argument('--gpu', type=str, default='0', help='GPU ID to use. For cpu, set -1 [default: 0]')
+    parser.add_argument('--n_epochs', type=int, default=10, help='Number of epochs [default: 10]')
+    parser.add_argument('--n_train', type=int, default=3803957, help='Number of training data (up to 3803957 in gigaword) [default: 3803957]')
+    parser.add_argument('--n_valid', type=int, default=189651, help='Number of validation data (up to 189651 in gigaword) [default: 189651]')
     parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size [default: 32]')
+    parser.add_argument('--vocab_size', type=int, default=60000, help='Vocabulary size [default: 60000]')
     parser.add_argument('--emb_dim', type=int, default=256, help='Embedding size [default: 256]')
     parser.add_argument('--hid_dim', type=int, default=256, help='Hidden state size [default: 256]')
-    parser.add_argument('--lat_dim', type=int, default=256, help='Latent size [default: 256]')
-    parser.add_argument('--alloc_mem', type=int, default=8192, help='Amount of memory to allocate [mb] [default: 8192]')
+    parser.add_argument('--encoder_type', type=str, default='attention', help='Encoder type. bow: Bag-of-words encoder. attention: Attention-based encoder [default: attention]')
+    parser.add_argument('--c', type=int, default=5, help='Window size in neural language model [default: 5]')
+    parser.add_argument('--q', type=int, default=2, help='Window size in attention-based encoder [default: 2]')
+    parser.add_argument('--alloc_mem', type=int, default=4096, help='Amount of memory to allocate [mb] [default: 4096]')
     args = parser.parse_args()
     print(args)
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    N_EPOCHS   = args.n_epochs
-    N_TRAIN    = args.n_train
-    N_VALID    = args.n_valid
-    BATCH_SIZE = args.batch_size
-    VOCAB_SIZE = 60000
-    EMB_DIM    = args.emb_dim
-    HID_DIM    = args.hid_dim
-    LAT_DIM    = args.lat_dim
-    ALLOC_MEM  = args.alloc_mem
+    N_EPOCHS     = args.n_epochs
+    N_TRAIN      = args.n_train
+    N_VALID      = args.n_valid
+    BATCH_SIZE   = args.batch_size
+    VOCAB_SIZE   = args.vocab_size
+    EMB_DIM      = args.emb_dim
+    HID_DIM      = args.hid_dim
+    ENCODER_TYPE = args.encoder_type
+    C            = args.c
+    Q            = args.q
+    ALLOC_MEM    = args.alloc_mem
 
     # File paths
     TRAIN_X_FILE = './data/train.article.txt'
@@ -68,18 +72,18 @@ def main():
 
     VOCAB_SIZE = len(w2i)
     OUT_DIM = VOCAB_SIZE
-    print(VOCAB_SIZE)
+    print('VOCAB_SIZE:', VOCAB_SIZE)
 
     # Build model ======================================================================================
     model = dy.Model()
     trainer = dy.AdamTrainer(model)
 
-    V = model.add_lookup_parameters((VOCAB_SIZE, EMB_DIM))
+    rush_abs = ABS(model, EMB_DIM, HID_DIM, VOCAB_SIZE, Q, C, encoder_type=ENCODER_TYPE)
 
-    encoder = BiGRU(model, EMB_DIM, 2*HID_DIM)
-    decoder = RecurrentGenerativeDecoder(model, EMB_DIM, 2*HID_DIM, LAT_DIM, OUT_DIM)
+    # Padding
+    train_y = [[w2i['<s>']]*(C-1)+instance_y for instance_y in train_y]
+    valid_y = [[w2i['<s>']]*(C-1)+instance_y for instance_y in valid_y]
 
-    # Train model =======================================================================================
     n_batches_train = math.ceil(len(train_X)/BATCH_SIZE)
     n_batches_valid = math.ceil(len(valid_X)/BATCH_SIZE)
 
@@ -91,8 +95,7 @@ def main():
         for i in tqdm(range(n_batches_train)):
             # Create a new computation graph
             dy.renew_cg()
-            encoder.associate_parameters()
-            decoder.associate_parameters()
+            rush_abs.associate_parameters()
 
             # Create a mini batch
             start = i*BATCH_SIZE
@@ -102,19 +105,9 @@ def main():
 
             losses = []
             for x, t in zip(train_X_mb, train_y_mb):
-                t_in, t_out = t[:-1], t[1:]
+                t_in, t_out = t[:-1], t[C:]
 
-                # Encoder
-                x_embs = [dy.lookup(V, x_t) for x_t in x]
-                he = encoder(x_embs)
-
-                # Decoder
-                t_embs = [dy.lookup(V, t_t) for t_t in t_in]
-                decoder.set_initial_states(he)
-                # y, KL = decoder(t_embs)
-                y = decoder(t_embs)
-
-                # loss = dy.esum([dy.pickneglogsoftmax(y_t, t_t) + KL_t for y_t, t_t, KL_t in zip(y, t_out, KL)])
+                y = rush_abs(x, t_in)
                 loss = dy.esum([dy.pickneglogsoftmax(y_t, t_t) for y_t, t_t in zip(y, t_out)])
                 losses.append(loss)
 
@@ -132,8 +125,7 @@ def main():
         for i in range(n_batches_valid):
             # Create a new computation graph
             dy.renew_cg()
-            encoder.associate_parameters()
-            decoder.associate_parameters()
+            rush_abs.associate_parameters()
 
             # Create a mini batch
             start = i*BATCH_SIZE
@@ -143,19 +135,9 @@ def main():
 
             losses = []
             for x, t in zip(valid_X_mb, valid_y_mb):
-                t_in, t_out = t[:-1], t[1:]
+                t_in, t_out = t[:-1], t[C:]
 
-                # Encoder
-                x_embs = [dy.lookup(V, x_t) for x_t in x]
-                he = encoder(x_embs)
-
-                # Decoder
-                t_embs = [dy.lookup(V, t_t) for t_t in t_in]
-                decoder.set_initial_states(he)
-                # y, KL = decoder(t_embs)
-                y = decoder(t_embs)
-
-                # loss = dy.esum([dy.pickneglogsoftmax(y_t, t_t) + KL_t for y_t, t_t, KL_t in zip(y, t_out, KL)])
+                y = rush_abs(x, t_in)
                 loss = dy.esum([dy.pickneglogsoftmax(y_t, t_t) for y_t, t_t in zip(y, t_out)])
                 losses.append(loss)
 
@@ -170,8 +152,8 @@ def main():
             np.mean(loss_all_valid)
         ))
 
-        # Save model ======================================================================================
-        dy.save('./model_e'+str(epoch+1), [V, encoder, decoder])
+        # Save model ========================================================================
+        dy.save('./model_e'+str(epoch+1), [rush_abs])
         with open('./w2i.dump', 'wb') as f_w2i, open('./i2w.dump', 'wb') as f_i2w:
             pickle.dump(w2i, f_w2i)
             pickle.dump(i2w, f_i2w)
